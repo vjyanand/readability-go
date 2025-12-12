@@ -1,0 +1,4 @@
+GET http://localhost:8080/proxy?url=https://www.dailywire.com/feeds/rss.xml
+
+###
+GET https://readability-go-production.up.railway.app/proxy?url=https://therightscoop.com/feed
