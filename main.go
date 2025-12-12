@@ -57,7 +57,6 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 	}
 
 	result := Response{Title: article.Title,
-		Body:        article.Content,
 		Url:         url,
 		Image:       article.Image,
 		Uri:         parsedURL.Host,
@@ -266,7 +265,9 @@ func main() {
 	mux.HandleFunc("/proxy", proxyHandler)
 	mux.HandleFunc("/check", check)
 
-	loggedHandler := handlers.LoggingHandler(os.Stdout, mux)
+	proxiedMux := handlers.ProxyHeaders(mux)
+
+	loggedHandler := handlers.LoggingHandler(os.Stdout, proxiedMux)
 	log.Println("Server starting on :8080")
 	if err := http.ListenAndServe(":8080", loggedHandler); err != nil {
 		log.Fatal("Failed to start:", err)
