@@ -20,14 +20,14 @@ import (
 )
 
 type Response struct {
-	Title       string `json:"title"`
-	Body        string `json:"body"`
-	Image       string `json:"image"`
+	Title       string `json:"title,omitempty"`
+	Body        string `json:"body,omitempty"`
+	Image       string `json:"image,omitempty"`
 	Url         string `json:"url"`
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
 	Uri         string `json:"uri"`
-	PubDate     string `json:"created_on"`
-	Author      string `json:"author"`
+	PubDate     string `json:"created_on,omitempty"`
+	Author      string `json:"author,omitempty"`
 }
 
 func extruct(w http.ResponseWriter, req *http.Request) {
@@ -64,6 +64,8 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 		Author:      article.Byline,
 		PubDate:     pubDate,
 	}
+
+	log.Printf("%+v", result)
 
 	jsonBytes, err := json.Marshal(result)
 	if err != nil {
