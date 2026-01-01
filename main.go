@@ -54,6 +54,7 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
+	
 	pubDate := ""
 	if pubTime, err := article.PublishedTime(); err == nil {
 		pubDate = pubTime.Format("20060102150405")
@@ -135,6 +136,7 @@ func r(w http.ResponseWriter, req *http.Request) {
 		log.Printf("JSON marshal error: %v", err)
 		return
 	}
+	html := buf.String()
 
 	result := Response{
 		Title:       article.Title(),
