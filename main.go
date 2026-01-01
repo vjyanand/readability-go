@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -8,12 +9,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
 	"time"
 
 	nurl "net/url"
 
-	"github.com/go-shiori/go-readability"
+	readability "codeberg.org/readeck/go-readability/v2"
+
 	"github.com/gorilla/handlers"
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
@@ -44,24 +45,27 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 
 	reader := strings.NewReader(html)
 	article, err := readability.FromReader(reader, parsedURL)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
 	}
+	
 	pubDate := ""
-	if article.ModifiedTime != nil {
-		pubDate = article.ModifiedTime.Format("20060102150405")
+	if pubTime, err := article.PublishedTime(); err == nil {
+		pubDate = pubTime.Format("20060102150405")
+	} else if modTime, err := article.ModifiedTime(); err == nil {
+		pubDate = modTime.Format("20060102150405")
 	}
 
-	result := Response{Title: article.Title,
+	result := Response{
+		Title:       article.Title(),
 		Url:         url,
-		Image:       article.Image,
+		Image:       article.ImageURL(),
 		Uri:         parsedURL.Host,
-		Description: article.Excerpt,
-		Author:      article.Byline,
+		Description: article.Excerpt(),
+		Author:      article.Byline(),
 		PubDate:     pubDate,
 	}
 
@@ -112,7 +116,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 	defer resp.Body.Close()
 
 	article, err := readability.FromReader(resp.Body, parsedURL)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -120,17 +123,28 @@ func r(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	pubDate := ""
-	if article.ModifiedTime != nil {
-		pubDate = article.ModifiedTime.Format("20060102150405")
+	if pubTime, err := article.PublishedTime(); err == nil {
+		pubDate = pubTime.Format("20060102150405")
+	} else if modTime, err := article.ModifiedTime(); err == nil {
+		pubDate = modTime.Format("20060102150405")
 	}
 
-	result := Response{Title: article.Title,
-		Body:        article.Content,
+	var buf bytes.Buffer
+	if err := article.RenderHTML(&buf); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		log.Printf("JSON marshal error: %v", err)
+		return
+	}
+	html := buf.String()
+
+	result := Response{
+		Title:       article.Title(),
+		Body:        html,
 		Url:         url,
-		Image:       article.Image,
+		Image:       article.ImageURL(),
 		Uri:         parsedURL.Host,
-		Description: article.Excerpt,
-		Author:      article.Byline,
+		Description: article.Excerpt(),
+		Author:      article.Byline(),
 		PubDate:     pubDate,
 	}
 
