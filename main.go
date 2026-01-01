@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -8,12 +11,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
-
 	"time"
 
 	nurl "net/url"
 
-	"github.com/go-shiori/go-readability"
+	readability "codeberg.org/readeck/go-readability/v2"
+
+	"github.com/andybalholm/brotli"
 	"github.com/gorilla/handlers"
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
@@ -44,7 +48,6 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 
 	reader := strings.NewReader(html)
 	article, err := readability.FromReader(reader, parsedURL)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -52,20 +55,21 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	pubDate := ""
-	if article.ModifiedTime != nil {
-		pubDate = article.ModifiedTime.Format("20060102150405")
+	if pubTime, err := article.PublishedTime(); err == nil {
+		pubDate = pubTime.Format("20060102150405")
+	} else if modTime, err := article.ModifiedTime(); err == nil {
+		pubDate = modTime.Format("20060102150405")
 	}
 
-	result := Response{Title: article.Title,
+	result := Response{
+		Title:       article.Title(),
 		Url:         url,
-		Image:       article.Image,
+		Image:       article.ImageURL(),
 		Uri:         parsedURL.Host,
-		Description: article.Excerpt,
-		Author:      article.Byline,
+		Description: article.Excerpt(),
+		Author:      article.Byline(),
 		PubDate:     pubDate,
 	}
-
-	log.Printf("%+v", result)
 
 	jsonBytes, err := json.Marshal(result)
 	if err != nil {
@@ -112,7 +116,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 	defer resp.Body.Close()
 
 	article, err := readability.FromReader(resp.Body, parsedURL)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -120,17 +123,27 @@ func r(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	pubDate := ""
-	if article.ModifiedTime != nil {
-		pubDate = article.ModifiedTime.Format("20060102150405")
+	if pubTime, err := article.PublishedTime(); err == nil {
+		pubDate = pubTime.Format("20060102150405")
+	} else if modTime, err := article.ModifiedTime(); err == nil {
+		pubDate = modTime.Format("20060102150405")
 	}
 
-	result := Response{Title: article.Title,
-		Body:        article.Content,
+	var buf bytes.Buffer
+	if err := article.RenderHTML(&buf); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		log.Printf("JSON marshal error: %v", err)
+		return
+	}
+
+	result := Response{
+		Title:       article.Title(),
+		Body:        buf.String(),
 		Url:         url,
-		Image:       article.Image,
+		Image:       article.ImageURL(),
 		Uri:         parsedURL.Host,
-		Description: article.Excerpt,
-		Author:      article.Byline,
+		Description: article.Excerpt(),
+		Author:      article.Byline(),
 		PubDate:     pubDate,
 	}
 
@@ -142,7 +155,14 @@ func r(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(jsonBytes))
+
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(result); err != nil {
+		log.Printf("json encode error: %v", err)
+	}
+
+	w.Write(jsonBytes)
 }
 
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -233,12 +253,12 @@ func fetchWithHTTP1(targetURL string) (*http.Response, error) {
 }
 
 func makeRequest(client *http.Client, targetURL string) (*http.Response, error) {
-	request, err := http.NewRequest("GET", targetURL, nil)
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	request.Header = http.Header{
+	req.Header = http.Header{
 		"User-Agent":      []string{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.3 Safari/605.1.15"},
 		"Referer":         []string{"https://google.com"},
 		"Accept":          []string{"text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml,application/json,*/*;q=0.8"},
@@ -247,17 +267,81 @@ func makeRequest(client *http.Client, targetURL string) (*http.Response, error) 
 		"Connection":      []string{"keep-alive"},
 	}
 
-	resp, err := client.Do(request)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 
+	// Save the original body for closing later
+	originalBody := resp.Body
+
+	// Decompress based on Content-Encoding
+	switch strings.ToLower(resp.Header.Get("Content-Encoding")) {
+	case "gzip":
+		gz, err := gzip.NewReader(originalBody)
+		if err != nil {
+			originalBody.Close()
+			return nil, err
+		}
+		resp.Body = struct {
+			io.Reader
+			io.Closer
+		}{gz, closeFunc(func() error {
+			// Close gzip reader first (releases internal resources)
+			gz.Close()
+			// Then close original connection
+			return originalBody.Close()
+		})}
+
+	case "deflate":
+		// flate.NewReader does NOT return a Closer that closes the underlying stream
+		fr := flate.NewReader(originalBody)
+		resp.Body = struct {
+			io.Reader
+			io.Closer
+		}{fr, closeFunc(func() error {
+			fr.Close() // Important: releases zlib resources
+			return originalBody.Close()
+		})}
+
+	case "br", "brotli":
+		brReader := brotli.NewReader(originalBody)
+		resp.Body = brotliReadCloser{
+			Reader: brReader,
+			closer: originalBody,
+		}
+
+	default:
+		// No compression: just ensure original body is closed later
+		resp.Body = originalBody // will be closed by defer
+	}
+
+	// Remove header so downstream doesn't think it's still compressed
+	resp.Header.Del("Content-Encoding")
+
 	return resp, nil
 }
+
+// Helper type for custom close behavior
+type closeFunc func() error
+
+func (f closeFunc) Close() error { return f() }
 
 func check(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
+}
+
+type brotliReadCloser struct {
+	*brotli.Reader
+	closer io.Closer // the underlying response body
+}
+
+func (brc brotliReadCloser) Close() error {
+	// First close the brotli reader (resets internal state)
+	brc.Reader.Reset(nil)
+	// Then close the original body
+	return brc.closer.Close()
 }
 
 func main() {

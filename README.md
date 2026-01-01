@@ -1,1 +1,1 @@
-Wrapper around github.com/go-shiori/go-readability
+Wrapper around codeberg.org/readeck/go-readability/v2
