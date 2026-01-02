@@ -4,4 +4,4 @@ GET http://localhost:8080/proxy?url=https://www.dailywire.com/feeds/rss.xml
 GET https://readability-go-production.up.railway.app/proxy?url=https://therightscoop.com/feed
 
 ###
- GET  http://localhost:8080/readability?url=https://without.boats/blog/pinned-places/
+ GET  http://localhost:8080/readability?url=https://www.offthepress.com/more-than-two-dozen-texas-cities-pass-sanctuary-cities-for-the-unborn-ordinances/

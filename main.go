@@ -54,7 +54,7 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
-	
+
 	pubDate := ""
 	if pubTime, err := article.PublishedTime(); err == nil {
 		pubDate = pubTime.Format("20060102150405")
@@ -136,7 +136,7 @@ func r(w http.ResponseWriter, req *http.Request) {
 		log.Printf("JSON marshal error: %v", err)
 		return
 	}
-	
+
 	result := Response{
 		Title:       article.Title(),
 		Body:        buf.String(),
@@ -148,12 +148,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 		PubDate:     pubDate,
 	}
 
-	jsonBytes, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		log.Printf("JSON marshal error: %v", err)
-		return
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
@@ -163,7 +157,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 		log.Printf("json encode error: %v", err)
 	}
 
-	w.Write(jsonBytes)
 }
 
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
