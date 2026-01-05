@@ -15,7 +15,7 @@ import (
 
 	nurl "net/url"
 
-	readability "codeberg.org/readeck/go-readability/v2"
+	r "codeberg.org/readeck/go-readability/v2"
 
 	"github.com/andybalholm/brotli"
 	"github.com/gorilla/handlers"
@@ -47,19 +47,19 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 	}
 
 	reader := strings.NewReader(html)
-	article, err := readability.FromReader(reader, parsedURL)
+	article, err := r.FromReader(reader, parsedURL)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
 	}
-	
+
 	pubDate := ""
 	if pubTime, err := article.PublishedTime(); err == nil {
-		pubDate = pubTime.Format("20060102150405")
+		pubDate = pubTime.Format("2006-01-02T15:04:05")
 	} else if modTime, err := article.ModifiedTime(); err == nil {
-		pubDate = modTime.Format("20060102150405")
+		pubDate = modTime.Format("2006-01-02T15:04:05")
 	}
 
 	result := Response{
@@ -80,10 +80,10 @@ func extruct(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(jsonBytes))
+	w.Write(jsonBytes)
 }
 
-func r(w http.ResponseWriter, req *http.Request) {
+func readability(w http.ResponseWriter, req *http.Request) {
 	url := req.URL.Query().Get("url")
 	if len(url) < 5 {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -91,8 +91,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte("500 - url is invalid"))
 		return
 	}
-
-	log.Println(url)
 
 	parsedURL, err := nurl.ParseRequestURI(url)
 	if err != nil {
@@ -116,7 +114,7 @@ func r(w http.ResponseWriter, req *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	article, err := readability.FromReader(resp.Body, parsedURL)
+	article, err := r.FromReader(resp.Body, parsedURL)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -125,9 +123,9 @@ func r(w http.ResponseWriter, req *http.Request) {
 	}
 	pubDate := ""
 	if pubTime, err := article.PublishedTime(); err == nil {
-		pubDate = pubTime.Format("20060102150405")
+		pubDate = pubTime.Format("2006-01-02T15:04:05")
 	} else if modTime, err := article.ModifiedTime(); err == nil {
-		pubDate = modTime.Format("20060102150405")
+		pubDate = modTime.Format("2006-01-02T15:04:05")
 	}
 
 	var buf bytes.Buffer
@@ -136,7 +134,7 @@ func r(w http.ResponseWriter, req *http.Request) {
 		log.Printf("JSON marshal error: %v", err)
 		return
 	}
-	
+
 	result := Response{
 		Title:       article.Title(),
 		Body:        buf.String(),
@@ -148,12 +146,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 		PubDate:     pubDate,
 	}
 
-	jsonBytes, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		log.Printf("JSON marshal error: %v", err)
-		return
-	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
@@ -163,7 +155,6 @@ func r(w http.ResponseWriter, req *http.Request) {
 		log.Printf("json encode error: %v", err)
 	}
 
-	w.Write(jsonBytes)
 }
 
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -347,7 +338,7 @@ func (brc brotliReadCloser) Close() error {
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/readability", r)
+	mux.HandleFunc("/readability", readability)
 	mux.HandleFunc("/extruct", extruct)
 	mux.HandleFunc("/proxy", proxyHandler)
 	mux.HandleFunc("/check", check)

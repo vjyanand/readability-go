@@ -10,10 +10,12 @@ require (
 	golang.org/x/net v0.48.0
 )
 
-require github.com/gorilla/handlers v1.5.2
+require (
+	github.com/andybalholm/brotli v1.2.0
+	github.com/gorilla/handlers v1.5.2
+)
 
 require (
-	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
